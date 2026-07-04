@@ -11,6 +11,7 @@ class ClaimsDataset(Dataset):
         insurance_labels,
         claim_labels,
         severity_labels,
+        department_labels,
         vocab,
         max_len
     ):
@@ -18,6 +19,7 @@ class ClaimsDataset(Dataset):
         self.insurance_labels = insurance_labels
         self.claim_labels = claim_labels
         self.severity_labels = severity_labels
+        self.department_labels = department_labels
         self.vocab = vocab
         self.max_len = max_len
 
@@ -43,6 +45,10 @@ class ClaimsDataset(Dataset):
             ),
             "severity": torch.tensor(
                 self.severity_labels[idx],
+                dtype=torch.long
+            ),
+            "department": torch.tensor(
+                self.department_labels[idx],
                 dtype=torch.long
             ),
         }
