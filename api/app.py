@@ -66,7 +66,16 @@ def batch_predict(request: BatchClaimRequest):
 def train_model():
     try:
         response = requests.post(TRAINER_URL, timeout=600)
-        return response.json()
+        result = response.json()
+
+        if os.path.exists(MODEL_PATH):
+            predictor.reload()
+
+        return {
+            "training_result": result,
+            "model_reloaded": os.path.exists(MODEL_PATH)
+        }
+
     except requests.exceptions.RequestException as error:
         raise HTTPException(
             status_code=500,
