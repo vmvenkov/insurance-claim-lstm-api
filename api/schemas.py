@@ -15,4 +15,7 @@ class PredictionResponse(BaseModel):
     severity: str
     severity_confidence: float
 
+    department: str
+    department_confidence: float
+
     recommendation: str
