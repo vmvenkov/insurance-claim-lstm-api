@@ -34,6 +34,11 @@ class ClaimPredictor:
         self.model.load_state_dict(self.checkpoint["model_state_dict"])
         self.model.eval()
 
+    def reload(self):
+        self.model = None
+        self.checkpoint = None
+        self.load()
+
     def predict(self, description):
         if self.model is None:
             self.load()
@@ -45,22 +50,15 @@ class ClaimPredictor:
         x = torch.tensor([encoded], dtype=torch.long)
 
         with torch.no_grad():
-            (
-                insurance_logits,
-                claim_logits,
-                severity_logits,
-                department_logits
-            ) = self.model(x)
+            outputs = self.model(x)
 
-            insurance_probs = F.softmax(insurance_logits, dim=1)
-            claim_probs = F.softmax(claim_logits, dim=1)
-            severity_probs = F.softmax(severity_logits, dim=1)
-            department_probs = F.softmax(department_logits, dim=1)
+            probs = [F.softmax(output, dim=1) for output in outputs]
+            results = [torch.max(prob, dim=1) for prob in probs]
 
-            insurance_conf, insurance_idx = torch.max(insurance_probs, dim=1)
-            claim_conf, claim_idx = torch.max(claim_probs, dim=1)
-            severity_conf, severity_idx = torch.max(severity_probs, dim=1)
-            department_conf, department_idx = torch.max(department_probs, dim=1)
+        insurance_conf, insurance_idx = results[0]
+        claim_conf, claim_idx = results[1]
+        severity_conf, severity_idx = results[2]
+        department_conf, department_idx = results[3]
 
         insurance_type = self.checkpoint["insurance_classes"][insurance_idx.item()]
         claim_type = self.checkpoint["claim_classes"][claim_idx.item()]
