@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./model:/app/model
+      - ./data:/app/data
+    depends_on:
+      - trainer
+
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.trainer
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./model:/app/model
+      - ./data:/app/data
