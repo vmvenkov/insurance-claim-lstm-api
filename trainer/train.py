@@ -18,7 +18,7 @@ MODEL_PATH = os.path.join(MODEL_DIR, "claim_lstm.pt")
 INFO_PATH = os.path.join(MODEL_DIR, "model_info.json")
 
 BATCH_SIZE = 16
-EPOCHS = 30
+EPOCHS = 25
 LEARNING_RATE = 0.001
 
 
@@ -33,25 +33,42 @@ def train():
     insurance_encoder = LabelEncoder()
     claim_encoder = LabelEncoder()
     severity_encoder = LabelEncoder()
+    department_encoder = LabelEncoder()
 
     y_insurance = insurance_encoder.fit_transform(df["insurance_type"])
     y_claim = claim_encoder.fit_transform(df["claim_type"])
     y_severity = severity_encoder.fit_transform(df["severity"])
+    y_department = department_encoder.fit_transform(df["department"])
 
-    X_train, X_test, yi_train, yi_test, yc_train, yc_test, ys_train, ys_test = train_test_split(
+    split_data = train_test_split(
         texts,
         y_insurance,
         y_claim,
         y_severity,
+        y_department,
         test_size=0.2,
         random_state=42
     )
+
+    (
+        X_train,
+        X_test,
+        yi_train,
+        yi_test,
+        yc_train,
+        yc_test,
+        ys_train,
+        ys_test,
+        yd_train,
+        yd_test
+    ) = split_data
 
     train_dataset = ClaimsDataset(
         X_train,
         yi_train,
         yc_train,
         ys_train,
+        yd_train,
         vocab,
         MAX_LEN
     )
@@ -66,7 +83,8 @@ def train():
         vocab_size=len(vocab),
         insurance_classes=len(insurance_encoder.classes_),
         claim_classes=len(claim_encoder.classes_),
-        severity_classes=len(severity_encoder.classes_)
+        severity_classes=len(severity_encoder.classes_),
+        department_classes=len(department_encoder.classes_)
     )
 
     criterion = nn.CrossEntropyLoss()
@@ -82,15 +100,22 @@ def train():
             insurance_y = batch["insurance"]
             claim_y = batch["claim"]
             severity_y = batch["severity"]
+            department_y = batch["department"]
 
             optimizer.zero_grad()
 
-            insurance_pred, claim_pred, severity_pred = model(x)
+            (
+                insurance_pred,
+                claim_pred,
+                severity_pred,
+                department_pred
+            ) = model(x)
 
             loss = (
                 criterion(insurance_pred, insurance_y)
                 + criterion(claim_pred, claim_y)
                 + criterion(severity_pred, severity_y)
+                + criterion(department_pred, department_y)
             )
 
             loss.backward()
@@ -106,11 +131,12 @@ def train():
         "insurance_classes": insurance_encoder.classes_.tolist(),
         "claim_classes": claim_encoder.classes_.tolist(),
         "severity_classes": severity_encoder.classes_.tolist(),
+        "department_classes": department_encoder.classes_.tolist(),
         "max_len": MAX_LEN
     }, MODEL_PATH)
 
     model_info = {
-        "model": "LSTM multi-output classifier",
+        "model": "Bidirectional LSTM multi-output classifier",
         "task": "Insurance claim description analysis",
         "epochs": EPOCHS,
         "training_samples": len(X_train),
@@ -119,7 +145,8 @@ def train():
         "outputs": [
             "insurance_type",
             "claim_type",
-            "severity"
+            "severity",
+            "department"
         ]
     }
 
