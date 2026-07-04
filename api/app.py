@@ -4,7 +4,7 @@ import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from predict import predict_claim
+from api.predict import predict_claim
 
 
 app = FastAPI(
