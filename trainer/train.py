@@ -17,15 +17,81 @@ MODEL_DIR = "model"
 MODEL_PATH = os.path.join(MODEL_DIR, "claim_lstm.pt")
 INFO_PATH = os.path.join(MODEL_DIR, "model_info.json")
 
-BATCH_SIZE = 16
-EPOCHS = 25
+BATCH_SIZE = 32
+EPOCHS = 30
 LEARNING_RATE = 0.001
+PATIENCE = 5
+
+
+def calculate_accuracy(predictions, labels):
+    predicted_classes = torch.argmax(predictions, dim=1)
+    correct = (predicted_classes == labels).sum().item()
+    return correct, labels.size(0)
+
+
+def evaluate(model, data_loader, criterion):
+    model.eval()
+
+    total_loss = 0
+
+    correct_insurance = 0
+    correct_claim = 0
+    correct_severity = 0
+    correct_department = 0
+    total_samples = 0
+
+    with torch.no_grad():
+        for batch in data_loader:
+            x = batch["x"]
+            insurance_y = batch["insurance"]
+            claim_y = batch["claim"]
+            severity_y = batch["severity"]
+            department_y = batch["department"]
+
+            (
+                insurance_pred,
+                claim_pred,
+                severity_pred,
+                department_pred
+            ) = model(x)
+
+            loss = (
+                criterion(insurance_pred, insurance_y)
+                + criterion(claim_pred, claim_y)
+                + criterion(severity_pred, severity_y)
+                + criterion(department_pred, department_y)
+            )
+
+            total_loss += loss.item()
+
+            c, n = calculate_accuracy(insurance_pred, insurance_y)
+            correct_insurance += c
+
+            c, _ = calculate_accuracy(claim_pred, claim_y)
+            correct_claim += c
+
+            c, _ = calculate_accuracy(severity_pred, severity_y)
+            correct_severity += c
+
+            c, _ = calculate_accuracy(department_pred, department_y)
+            correct_department += c
+
+            total_samples += n
+
+    return {
+        "loss": total_loss / len(data_loader),
+        "insurance_accuracy": correct_insurance / total_samples,
+        "claim_accuracy": correct_claim / total_samples,
+        "severity_accuracy": correct_severity / total_samples,
+        "department_accuracy": correct_department / total_samples
+    }
 
 
 def train():
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     df = pd.read_csv(DATA_PATH)
+
     texts = df["description"].astype(str).tolist()
 
     vocab = build_vocab(texts)
@@ -52,15 +118,15 @@ def train():
 
     (
         X_train,
-        X_test,
+        X_val,
         yi_train,
-        yi_test,
+        yi_val,
         yc_train,
-        yc_test,
+        yc_val,
         ys_train,
-        ys_test,
+        ys_val,
         yd_train,
-        yd_test
+        yd_val
     ) = split_data
 
     train_dataset = ClaimsDataset(
@@ -73,10 +139,26 @@ def train():
         MAX_LEN
     )
 
+    val_dataset = ClaimsDataset(
+        X_val,
+        yi_val,
+        yc_val,
+        ys_val,
+        yd_val,
+        vocab,
+        MAX_LEN
+    )
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False
     )
 
     model = ClaimLSTM(
@@ -90,10 +172,13 @@ def train():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    model.train()
+    best_val_loss = float("inf")
+    epochs_without_improvement = 0
+    best_metrics = {}
 
     for epoch in range(EPOCHS):
-        total_loss = 0
+        model.train()
+        total_train_loss = 0
 
         for batch in train_loader:
             x = batch["x"]
@@ -121,27 +206,54 @@ def train():
             loss.backward()
             optimizer.step()
 
-            total_loss += loss.item()
+            total_train_loss += loss.item()
 
-        print(f"Epoch {epoch + 1}/{EPOCHS}, Loss: {total_loss:.4f}")
+        train_loss = total_train_loss / len(train_loader)
+        val_metrics = evaluate(model, val_loader, criterion)
 
-    torch.save({
-        "model_state_dict": model.state_dict(),
-        "vocab": vocab,
-        "insurance_classes": insurance_encoder.classes_.tolist(),
-        "claim_classes": claim_encoder.classes_.tolist(),
-        "severity_classes": severity_encoder.classes_.tolist(),
-        "department_classes": department_encoder.classes_.tolist(),
-        "max_len": MAX_LEN
-    }, MODEL_PATH)
+        print(
+            f"Epoch {epoch + 1}/{EPOCHS} | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_metrics['loss']:.4f} | "
+            f"Insurance Acc: {val_metrics['insurance_accuracy']:.4f} | "
+            f"Claim Acc: {val_metrics['claim_accuracy']:.4f} | "
+            f"Severity Acc: {val_metrics['severity_accuracy']:.4f} | "
+            f"Department Acc: {val_metrics['department_accuracy']:.4f}"
+        )
+
+        if val_metrics["loss"] < best_val_loss:
+            best_val_loss = val_metrics["loss"]
+            epochs_without_improvement = 0
+            best_metrics = val_metrics
+
+            torch.save({
+                "model_state_dict": model.state_dict(),
+                "vocab": vocab,
+                "insurance_classes": insurance_encoder.classes_.tolist(),
+                "claim_classes": claim_encoder.classes_.tolist(),
+                "severity_classes": severity_encoder.classes_.tolist(),
+                "department_classes": department_encoder.classes_.tolist(),
+                "max_len": MAX_LEN
+            }, MODEL_PATH)
+
+            print("Best model saved.")
+        else:
+            epochs_without_improvement += 1
+
+        if epochs_without_improvement >= PATIENCE:
+            print("Early stopping activated.")
+            break
 
     model_info = {
         "model": "Bidirectional LSTM multi-output classifier",
         "task": "Insurance claim description analysis",
-        "epochs": EPOCHS,
+        "epochs_configured": EPOCHS,
+        "early_stopping_patience": PATIENCE,
         "training_samples": len(X_train),
-        "test_samples": len(X_test),
+        "validation_samples": len(X_val),
         "vocab_size": len(vocab),
+        "best_validation_loss": best_val_loss,
+        "best_metrics": best_metrics,
         "outputs": [
             "insurance_type",
             "claim_type",
