@@ -2,9 +2,9 @@ import os
 import json
 import requests
 from fastapi import FastAPI
-from pydantic import BaseModel
 
-from api.predict import predict_claim
+from api.schemas import ClaimRequest, PredictionResponse
+from api.predict import ClaimPredictor
 
 
 app = FastAPI(
@@ -13,33 +13,25 @@ app = FastAPI(
     version="1.0"
 )
 
-
 TRAINER_URL = "http://trainer:8001/train"
 INFO_PATH = "model/model_info.json"
 
-
-class ClaimRequest(BaseModel):
-    description: str
+predictor = ClaimPredictor()
 
 
 @app.get("/")
 def home():
-    return {
-        "message": "Insurance Claim LSTM API is running"
-    }
+    return {"message": "Insurance Claim LSTM API is running"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok"
-    }
+    return {"status": "ok"}
 
 
-@app.post("/predict")
+@app.post("/predict", response_model=PredictionResponse)
 def predict(request: ClaimRequest):
-    result = predict_claim(request.description)
-    return result
+    return predictor.predict(request.description)
 
 
 @app.post("/train")
@@ -51,11 +43,7 @@ def train_model():
 @app.get("/model-info")
 def model_info():
     if not os.path.exists(INFO_PATH):
-        return {
-            "message": "Model information not found. Please train the model first."
-        }
+        return {"message": "Model information not found. Please train the model first."}
 
     with open(INFO_PATH, "r", encoding="utf-8") as f:
-        info = json.load(f)
-
-    return info
+        return json.load(f)
