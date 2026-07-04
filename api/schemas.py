@@ -1,8 +1,13 @@
+from typing import List
 from pydantic import BaseModel
 
 
 class ClaimRequest(BaseModel):
     description: str
+
+
+class BatchClaimRequest(BaseModel):
+    descriptions: List[str]
 
 
 class PredictionResponse(BaseModel):
