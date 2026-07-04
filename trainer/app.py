@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from train import train
+from trainer.train import train
 
 
 app = FastAPI(
